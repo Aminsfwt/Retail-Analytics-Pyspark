@@ -433,6 +433,21 @@ Gold Parquet Files
 
 - The Power BI file [Power BI File](./Retail_Analytics_Dashboard.pbix)
 
+    - Product Categories Analytics
+        ![Product Categories Analytics](/Pictures/product_category.png)
+
+    - Units Sold & Revenue
+        ![Units Sold & Revenue](/Pictures/Units_Sold&Revenue.png)
+
+    - Daily Analytics
+        ![Daily Analytics](/Pictures/Daily_Analytics.png)
+
+    - States Analytics
+        ![States Analytics](/Pictures/States_Analytics.png)
+
+    -  Revenue per City
+        ![ Revenue per City](/Pictures/Revenue_per_City.png)                
+
 ---
 
 ## 🔮 Next Steps
