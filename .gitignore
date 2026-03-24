@@ -1,3 +1,5 @@
 data/
 .python-version
 pyproject.toml
+uv/
+test
