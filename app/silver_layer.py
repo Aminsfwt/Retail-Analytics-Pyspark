@@ -1,87 +1,103 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, upper, trim
+import argparse
 
+def silver_layer(silver_input: str, silver_output: str):
+    # Silver applies quality rules and standardization on top of the bronze dataset.
+    with SparkSession.builder.master("spark://spark-master:7077").appName("SilverLayer").getOrCreate() as spark:
+        spark.sparkContext.setLogLevel("ERROR")
+        
+        # Read the parquet dataset produced by the bronze layer.
+        bronze_df = spark.read.parquet(silver_input)
 
-# Initialize Spark Session
-spark = SparkSession.builder \
-    .appName("SilverLayer") \
-    .master("spark://spark-master:7077") \
-    .getOrCreate()
+        # Basic logging helps confirm input size and schema before cleaning starts.
+        print("Bronze count:", bronze_df.count())
+        bronze_df.printSchema()
 
-# Read Bronze Layer
-bronze_df = spark.read.parquet("/opt/spark-data/bronze/retail_sales_bronze.parquet")
+        # Inspect duplicate business keys before removing them from the curated layer.
+        bronze_df.groupBy("transaction_id").count().filter(col("count") > 1)
 
-# Initial Data Exploration
-print("Bronze count:", bronze_df.count())
-bronze_df.printSchema()
+        # Keep only one record per transaction_id to avoid double-counting in analytics.
+        silver_df = bronze_df.dropDuplicates(["transaction_id"])
 
-# Show Deduplicated records
-bronze_df.groupBy("transaction_id").count().filter(col("count") > 1)
+        # Log the row count after duplicate removal.
+        print("Silver count after deduplication:", silver_df.count())
 
-# Drop Duplicates
-silver_df = bronze_df.dropDuplicates(["transaction_id"])
+        # Shipping cannot happen before ordering, so invalid ship dates are nulled out.
+        silver_df = silver_df.withColumn(
+            "ship_date",
+            when(col("ship_date") < col("order_date"), None)
+            .otherwise(col("ship_date"))
+        )
 
-# Show count after deduplication
-print("Bronze count:", silver_df.count())
+        # Rows with non-positive quantities are not valid sales transactions.
+        silver_df = silver_df.filter(col("quantity") > 0)
 
-# Date Corrections
-# Set ship_date to null where it is before order_date
-silver_df = silver_df.withColumn(
-    "ship_date",
-    when(col("ship_date") < col("order_date"), None)
-    .otherwise(col("ship_date"))
-)
+        # Preserve the row but null out impossible pricing values for downstream handling.
+        silver_df = silver_df.withColumn(
+            "unit_price",
+            when(col("unit_price") <= 0, None)
+            .otherwise(col("unit_price"))
+        )
 
-# Quantity & Price Cleaning
-silver_df = silver_df.filter(col("quantity") > 0)
+        # Discounts must be between 0 and 100 percent.
+        silver_df = silver_df.withColumn(
+            "discount_pct",
+            when((col("discount_pct") < 0) | (col("discount_pct") > 100), None)
+            .otherwise(col("discount_pct"))
+        )
 
-# Set unit_price to null where it is <= 0
-silver_df = silver_df.withColumn(
-    "unit_price",
-    when(col("unit_price") <= 0, None)
-    .otherwise(col("unit_price"))
-)
+        # Null out unrealistic ages while keeping the transaction itself.
+        silver_df = silver_df.withColumn(
+            "customer_age",
+            when((col("customer_age") < 15) | (col("customer_age") > 100), None)
+            .otherwise(col("customer_age"))
+        )
 
-# Discount Cleaning
-silver_df = silver_df.withColumn(
-    "discount_pct",
-    when((col("discount_pct") < 0) | (col("discount_pct") > 100), None)
-    .otherwise(col("discount_pct"))
-)
+        # Normalize gender labels into a compact, consistent set for analysis.
+        silver_df = silver_df.withColumn(
+            "gender",
+            when(upper(trim(col("gender"))) == "MALE", "M")
+            .when(upper(trim(col("gender"))) == "FEMALE", "F")
+            .when(col("gender").isin("M", "F"), col("gender"))
+            .otherwise(None)
+        )
 
-# Customer Age Cleaning
-silver_df = silver_df.withColumn(
-    "customer_age",
-    when((col("customer_age") < 15) | (col("customer_age") > 100), None)
-    .otherwise(col("customer_age"))
-)
+        # Keep only supported payment methods used by the reporting layer.
+        silver_df = silver_df.withColumn(
+            "payment_type",
+            when(col("payment_type").isin("Card", "UPI", "COD"), col("payment_type"))
+            .otherwise(None)
+        )
 
-# Standardize Gender
-silver_df = silver_df.withColumn(
-    "gender",
-    when(upper(trim(col("gender"))) == "MALE", "M")
-    .when(upper(trim(col("gender"))) == "FEMALE", "F")
-    .when(col("gender").isin("M", "F"), col("gender"))
-    .otherwise(None)
-)
+        # Final row count after all silver quality rules are applied.
+        print("Silver count:", silver_df.count())
 
-# Standardize Payment Type
-silver_df = silver_df.withColumn(
-    "payment_type",
-    when(col("payment_type").isin("Card", "UPI", "COD"), col("payment_type"))
-    .otherwise(None)
-)
+        # Write the cleaned dataset for reuse by downstream marts.
+        (
+            silver_df
+            .repartition(8)
+            .write
+            .mode("overwrite")
+            .parquet(silver_output)
+        )
 
-# Final count after cleaning
-print("Silver count:", silver_df.count())
+        print("Silver layer created successfully")
 
-# Write Silver Layer
-(
-    silver_df
-    .repartition(8)
-    .write
-    .mode("overwrite")
-    .parquet("/opt/spark-data/silver/retail_sales_clean.parquet")
-)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Create the silver layer of the data with Spark")
+    parser.add_argument(
+        "--silver_input",
+        type=str,
+        default="/opt/spark-data/bronze/",
+        help="Path to the bronze parquet dataset",
+    )
+    parser.add_argument(
+        "--silver_output",
+        type=str,
+        default="/opt/spark-data/silver/",
+        help="Destination directory for the cleaned silver parquet dataset",
+    )
+    args = parser.parse_args()
 
-print("Silver layer created successfully")
+    silver_layer(args.silver_input, args.silver_output)

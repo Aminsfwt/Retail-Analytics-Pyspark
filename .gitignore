@@ -3,3 +3,7 @@ data/
 pyproject.toml
 uv/
 test
+
+app/__pycache__/
+app/__pycache__/
+app/__pycache__/
