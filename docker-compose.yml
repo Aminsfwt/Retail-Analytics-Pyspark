@@ -14,7 +14,8 @@ services:
       - "7077:7077"   # Spark Master port
     volumes:
       - ./app:/opt/spark-app
-      - ./data:/opt/spark-data
+      - spark-data:/opt/spark-data
+      - ./data:/opt/spark-host-data:ro
 
   spark-worker-1:
     image: apache/spark:3.5.1
@@ -30,7 +31,8 @@ services:
       - spark-master
     volumes:
       - ./app:/opt/spark-app
-      - ./data:/opt/spark-data
+      - spark-data:/opt/spark-data
+      - ./data:/opt/spark-host-data:ro
 
   spark-worker-2:
     image: apache/spark:3.5.1
@@ -45,4 +47,8 @@ services:
       - spark-master
     volumes:
       - ./app:/opt/spark-app
-      - ./data:/opt/spark-data
+      - spark-data:/opt/spark-data
+      - ./data:/opt/spark-host-data:ro
+
+volumes:
+  spark-data:

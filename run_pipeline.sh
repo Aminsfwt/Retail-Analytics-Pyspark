@@ -5,6 +5,15 @@ echo "Starting Spark Cluster..."
 docker-compose up -d spark-master spark-worker-1 spark-worker-2
 sleep 10
 
+echo "Preparing input data inside shared Spark volume..."
+docker exec -u 0 spark-worker-1 bash -c "
+  mkdir -p /opt/spark-data/raw &&
+  chmod -R a+rwx /opt/spark-data &&
+  cp /opt/spark-host-data/raw/retail_sales_raw.csv /opt/spark-data/raw/retail_sales_raw.csv &&
+  chmod -R a+rwx /opt/spark-data
+"
+echo "Preparing input data inside shared Spark volume DONE..."
+
 SUBMIT="docker exec spark-worker-1 /opt/spark/bin/spark-submit \
     --master spark://spark-master:7077 \
     --deploy-mode client \
