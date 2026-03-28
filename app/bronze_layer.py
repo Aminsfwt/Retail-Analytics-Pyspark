@@ -30,11 +30,13 @@ def bronze_layer(input: str, output: str):
 
         # Read the raw file exactly as delivered, preserving all rows for downstream cleaning.
         bronze_df = spark.read.schema(right_schema).csv(input, header=True)
+        print(bronze_df.count())
 
+        print("start writing")
         # Repartition before writing so the bronze output is distributed across the cluster.
         bronze_df.repartition(24).write.mode("overwrite").parquet(output)
 
-    print("\n \n Bronze layer created successfully!")
+    print("Bronze layer created successfully!")
 
 
 if __name__ == "__main__":
@@ -48,7 +50,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=str,
-        default="/opt/spark-data/bronze/",
+        default="/opt/spark-data/bronze",
         help="Destination directory for the bronze parquet dataset",
     )
     args = parser.parse_args()

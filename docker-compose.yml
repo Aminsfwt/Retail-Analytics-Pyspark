@@ -32,7 +32,7 @@ services:
     volumes:
       - ./app:/opt/spark-app
       - spark-data:/opt/spark-data
-      - ./data:/opt/spark-host-data:ro
+      - ./data:/opt/spark-host-data:ro 
 
   spark-worker-2:
     image: apache/spark:3.5.1
